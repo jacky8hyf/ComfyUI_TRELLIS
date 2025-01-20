@@ -135,7 +135,7 @@ class Trellis_Sampler:
             model.cuda()
             glb=image_to_3d(model,img,preprocess_image,covert2video,path_rel,seed,cfg,steps,slat_cfg,slat_steps,mesh_simplify,texture_size,mode,is_multiimage,gaussians2ply,multiimage_algo)
             glb_path = pathlib.Path(f"{path_base}_{i}.glb")
-            glb.export(glb_path)
+            glb.export(str(glb_path))
             glb_paths.append(glb_path)
             model.cpu()
             gc.collect()
@@ -146,14 +146,14 @@ class Trellis_Sampler:
         if glb2obj or glb2fbx:
             for path in glb_paths:
                 obj_path = path.with_suffix(".obj")
-                glb2obj_(path, obj_path)
+                glb2obj_(str(path), str(obj_path))
                 obj_paths.append(obj_path)
 
         fbx_paths = []
         if glb2fbx:
             for path in obj_paths:
                 fbx_path = path.with_suffix(".fbx")
-                obj2fbx_(path, fbx_path)
+                obj2fbx_(str(path), str(fbx_path))
                 fbx_paths.append(fbx_path)
 
         return ([str(path) for path in glb_paths], [str(path) for path in obj_paths], [str(path) for path in fbx_paths])
