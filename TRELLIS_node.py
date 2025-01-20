@@ -3,6 +3,7 @@
 import numpy as np
 import gc
 import os
+import pathlib
 import torch
 import uuid
 from .app import image_to_3d
@@ -26,7 +27,7 @@ except:
 class Trellis_LoadModel:
     def __init__(self):
         pass
-    
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -37,12 +38,12 @@ class Trellis_LoadModel:
                 "spconv_algo":(["auto","flash-native"],),
             }
         }
-    
+
     RETURN_TYPES = ("MODEL_TRELLIS", )
     RETURN_NAMES = ("model",)
     FUNCTION = "main_loader"
     CATEGORY = "Trellis"
-    
+
     def main_loader(self, repo,dino,attn_backend,spconv_algo):
         if attn_backend=="xformers":
             os.environ['ATTN_BACKEND'] = 'xformers'
@@ -52,10 +53,10 @@ class Trellis_LoadModel:
             os.environ['SPCONV_ALGO'] = 'auto'
         else:
             os.environ['SPCONV_ALGO'] = 'native'
-        
+
         if dino=="none":
             raise "need choice dinov2 checkpoint"
-        
+
         TrellisImageTo3DPipeline.dino=folder_paths.get_full_path("dinov2", dino)
         TrellisImageTo3DPipeline.dino_moudel=os.path.join(current_path,"facebookresearch/dinov2")
         if repo:
@@ -68,7 +69,7 @@ class Trellis_LoadModel:
 class Trellis_Sampler:
     @classmethod
     def INPUT_TYPES(s):
-        
+
         return {
             "required": {
                 "image": ("IMAGE",),  # [B,H,W,C], C=3
@@ -88,71 +89,77 @@ class Trellis_Sampler:
                 "covert2video": ("BOOLEAN", {"default": False},),
                 "glb2obj": ("BOOLEAN", {"default": False},),
                 "glb2fbx": ("BOOLEAN", {"default": False},),
+                "custom_path": ("STRING", {"default": ""}),
+                "filename_prefix": ("STRING", {"default": ""}),
+                "timestamp_fixed": ("STRING", {"default": ""}),
             }
         }
-    
-    RETURN_TYPES = ("STRING", )
-    RETURN_NAMES = ("model_path",)
+
+    OUTPUT_IS_LIST = (True, True, True,)
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("glb_paths", "obj_paths", "fbx_paths")
     FUNCTION = "sampler_main"
     CATEGORY = "Trellis"
-    
-    def sampler_main(self, image, model,  seed, cfg, steps,slat_cfg, slat_steps,preprocess_image,texture_size,mesh_simplify,mode,multi_image,multiimage_algo,gaussians2ply,covert2video,glb2obj,glb2fbx):
- 
+
+    def sampler_main(self, image, model,  seed, cfg, steps,slat_cfg, slat_steps,preprocess_image,texture_size,mesh_simplify,mode,multi_image,multiimage_algo,gaussians2ply,covert2video,glb2obj,glb2fbx,custom_path,filename_prefix,timestamp_fixed):
+
         image_list,image_batch=tensor2imglist(image) #pil_list,batch
-       
+
         if multi_image and image_batch % 3 == 0:
             print("********infer multi image,like Three views ******")
             image_list=[image_list[i:i + 3] for i in range(0, len(image_list), 3)] #三等分列表
             is_multiimage=True
         else:
             is_multiimage = False
-        trial_id = str(uuid.uuid4())
-       
-        output_path = []
+
+        if filename_prefix or timestamp_fixed:
+            if not filename_prefix:
+                stem = timestamp_fixed
+            elif not timestamp_fixed:
+                stem = filename_prefix
+            else:
+                stem = f"{filename_prefix}_{timestamp_fixed}"
+        else:
+            stem = str(uuid.uuid4())
+
+        if custom_path:
+            path_rel = pathlib.Path(custom_path) / stem
+        else:
+            path_rel = pathlib.Path(stem)
+
+        path_base = pathlib.Path(folder_paths.get_output_directory()) / path_rel
+        path_base.parent.mkdir(parents=True, exist_ok=True)
+
+        glb_paths = []
         for i,img in enumerate(image_list):
             model.cuda()
-            glb=image_to_3d(model,img,preprocess_image,covert2video,trial_id,seed,cfg,steps,slat_cfg,slat_steps,mesh_simplify,texture_size,mode,is_multiimage,gaussians2ply,multiimage_algo)
-            glb_path = f"{folder_paths.get_output_directory()}/{trial_id}_{i}.glb"
+            glb=image_to_3d(model,img,preprocess_image,covert2video,path_rel,seed,cfg,steps,slat_cfg,slat_steps,mesh_simplify,texture_size,mode,is_multiimage,gaussians2ply,multiimage_algo)
+            glb_path = f"{path_base}_{i}.glb"
             glb.export(glb_path)
-            output_path.append(glb_path)
+            glb_paths.append(glb_path)
             model.cpu()
             gc.collect()
             torch.cuda.empty_cache()
             print(f"glb save in {glb_path} ")
 
-        if glb2obj:
-            obj_paths=[]
-            for path in output_path:
-                obj_path=os.path.join(os.path.split(path)[0],os.path.split(path)[1].replace(".glb",".obj"))
+        obj_paths = []
+        if glb2obj or glb2fbx:
+            for path in glb_paths:
+                obj_path = path.with_suffix(".obj")
                 glb2obj_(path, obj_path)
                 obj_paths.append(obj_path)
-            if glb2fbx:
-                fbx_paths=[]
-                for i in obj_paths:
-                    fbx_path = os.path.join(os.path.split(i)[0], os.path.split(i)[1].replace(".obj", ".fbx"))
-                    obj2fbx_(i, fbx_path)
-                    fbx_paths.append(fbx_path)
-                output_path=fbx_paths
-            else:
-                output_path=obj_paths
-        else:
-            if glb2fbx:
-                obj_paths = []
-                fbx_paths = []
-                for path in output_path:
-                    obj_path = os.path.join(os.path.split(path)[0], os.path.split(path)[1].replace(".glb", ".obj"))
-                    glb2obj_(path, obj_path)
-                    obj_paths.append(obj_path)
-                for i in obj_paths:
-                    fbx_path = os.path.join(os.path.split(i)[0], os.path.split(i)[1].replace(".obj", ".fbx"))
-                    obj2fbx_(i, fbx_path)
-                    fbx_paths.append(fbx_path)
-                output_path = obj_paths
-        model_path = '\n'.join(output_path)
-        return (model_path,)
+
+        fbx_paths = []
+        if glb2fbx:
+            for path in obj_paths:
+                fbx_path = path.with_suffix(".fbx")
+                obj2fbx_(path, fbx_path)
+                fbx_paths.append(fbx_path)
+
+        return ([str(path) for path in glb_paths], [str(path) for path in obj_paths], [str(path) for path in fbx_paths])
 
 class Trellis_multiimage_loader:
-    
+
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {"image_a": ("IMAGE",),
@@ -160,12 +167,12 @@ class Trellis_multiimage_loader:
                 "optional": {"image_b": ("IMAGE",),
                              "image_c": ("IMAGE",),}
                 }
-    
+
     RETURN_TYPES = ("IMAGE",)
     ETURN_NAMES = ("image",)
     FUNCTION = "main_batch"
     CATEGORY = "Trellis"
-    
+
     def main_batch(self, image_a, **kwargs):
         image_b = kwargs.get("image_b")
         image_c = kwargs.get("image_c")
@@ -188,7 +195,7 @@ class Trellis_multiimage_loader:
             image = torch.cat(img_list, dim=0)
         else:
             image=image_a
-    
+
         return (image,)
 
 
@@ -196,11 +203,10 @@ NODE_CLASS_MAPPINGS = {
     "Trellis_LoadModel": Trellis_LoadModel,
     "Trellis_Sampler": Trellis_Sampler,
     "Trellis_multiimage_loader":Trellis_multiimage_loader
-    
+
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "Trellis_LoadModel": "Trellis_LoadModel",
     "Trellis_Sampler": "Trellis_Sampler",
     "Trellis_multiimage_loader":"Trellis_multiimage_loader"
 }
-
