@@ -134,7 +134,7 @@ class Trellis_Sampler:
         for i,img in enumerate(image_list):
             model.cuda()
             glb=image_to_3d(model,img,preprocess_image,covert2video,path_rel,seed,cfg,steps,slat_cfg,slat_steps,mesh_simplify,texture_size,mode,is_multiimage,gaussians2ply,multiimage_algo)
-            glb_path = f"{path_base}_{i}.glb"
+            glb_path = pathlib.Path(f"{path_base}_{i}.glb")
             glb.export(glb_path)
             glb_paths.append(glb_path)
             model.cpu()
