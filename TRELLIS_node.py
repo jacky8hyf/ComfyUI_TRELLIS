@@ -144,8 +144,8 @@ class Trellis_Sampler:
         obj_paths = []
         if glb2obj or glb2fbx:
             for path in glb_paths:
-                # .obj also have material files that goes with it, so put it in a directory
-                obj_path = path.with_suffix(".obj") / path.with_suffix(".obj").name
+                # .obj and .fbx also have material files that goes with it, so put it in a directory
+                obj_path = path.with_suffix("") / path.with_suffix(".obj").name
                 glb2obj_(str(path), str(obj_path))
                 obj_paths.append(obj_path)
 
