@@ -123,17 +123,16 @@ class Trellis_Sampler:
             stem = str(uuid.uuid4())
 
         if custom_path:
-            path_rel = pathlib.Path(custom_path) / stem
+            path_base = pathlib.Path(custom_path) / stem
         else:
-            path_rel = pathlib.Path(stem)
+            path_base = pathlib.Path(stem)
 
-        path_base = pathlib.Path(folder_paths.get_output_directory()) / path_rel
         path_base.parent.mkdir(parents=True, exist_ok=True)
 
         glb_paths = []
         for i,img in enumerate(image_list):
             model.cuda()
-            glb=image_to_3d(model,img,preprocess_image,covert2video,path_rel,seed,cfg,steps,slat_cfg,slat_steps,mesh_simplify,texture_size,mode,is_multiimage,gaussians2ply,multiimage_algo)
+            glb=image_to_3d(model,img,preprocess_image,covert2video,path_base,seed,cfg,steps,slat_cfg,slat_steps,mesh_simplify,texture_size,mode,is_multiimage,gaussians2ply,multiimage_algo)
             glb_path = pathlib.Path(f"{path_base}_{i}.glb")
             glb.export(str(glb_path))
             glb_paths.append(glb_path)
@@ -145,7 +144,8 @@ class Trellis_Sampler:
         obj_paths = []
         if glb2obj or glb2fbx:
             for path in glb_paths:
-                obj_path = path.with_suffix(".obj")
+                # .obj also have material files that goes with it, so put it in a directory
+                obj_path = path.with_suffix("_obj") / path.with_suffix(".obj").name
                 glb2obj_(str(path), str(obj_path))
                 obj_paths.append(obj_path)
 
